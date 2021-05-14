@@ -14,7 +14,6 @@ import {
 const PHOTO_STORAGE = "photos";
 
 export function usePhotoGallery() {
-  
   const { deleteFile, getUri, readFile, writeFile } = useFilesystem();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const { getPhoto } = useCamera();
@@ -22,16 +21,20 @@ export function usePhotoGallery() {
 
   useEffect(() => {
     const loadSaved = async () => {
-      const photosString = await get(PHOTO_STORAGE);
-      const photos = (photosString ? JSON.parse(photosString) : []) as Photo[];
-      for (let photo of photos) {
-        const file = await readFile({
-          path: photo.filepath,
-          directory: FilesystemDirectory.Data
-        });
-        photo.webviewPath = `data:image/jpeg;base64,${file.data}`;
+      const photosString = await get("photos");
+      const photosInStorage = (
+        photosString ? JSON.parse(photosString) : []
+      ) as Photo[];
+      if (!isPlatform("hybrid")) {
+        for (let photo of photosInStorage) {
+          const file = await readFile({
+            path: photo.filepath,
+            directory: FilesystemDirectory.Data,
+          });
+          photo.webviewPath = `data:image/jpeg;base64,${file.data}`;
+        }
       }
-      setPhotos(photos);
+      setPhotos(photosInStorage);
     };
     loadSaved();
   }, [get, readFile]);
@@ -53,17 +56,32 @@ export function usePhotoGallery() {
     photo: CameraPhoto,
     fileName: string
   ): Promise<Photo> => {
-    const base64Data = await base64FromPath(photo.webPath!);
+    let base64Data: string;
+    if (isPlatform("hybrid")) {
+      const file = await readFile({
+        path: photo.path!,
+      });
+      base64Data = file.data;
+    } else {
+      base64Data = await base64FromPath(photo.webPath!);
+    }
     const savedFile = await writeFile({
       path: fileName,
       data: base64Data,
       directory: FilesystemDirectory.Data,
     });
 
-    return {
-      filepath: fileName,
-      webviewPath: photo.webPath,
-    };
+    if (isPlatform("hybrid")) {
+      return {
+        filepath: savedFile.uri,
+        webviewPath: Capacitor.convertFileSrc(savedFile.uri),
+      };
+    } else {
+      return {
+        filepath: fileName,
+        webviewPath: photo.webPath,
+      };
+    }
   };
 
   return {
